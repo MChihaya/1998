@@ -12,6 +12,10 @@ export class Renderer {
         this.height = canvas.height;
         this.camera = { x: 0, y: 0, zoom: 1.0 };
         this.palette = PALETTES.light;
+
+        // ターゲットウィンドウのアニメーション用状態保持
+        this.targetVisualNodes = new Map();
+        this.skipTargetAnimation = false; // アニメーションスキップ用フラグ
     }
 
     resize() {
@@ -29,6 +33,13 @@ export class Renderer {
         this.camera.x = this.width / 2;
         this.camera.y = this.height / 2;
         this.camera.zoom = 1.0;
+    }
+
+    // ターゲットウィンドウのアニメーション状態をリセット
+    // immediate=true の場合、次の描画時にアニメーションせず即座に位置を合わせる
+    resetTargetView(immediate = false) {
+        this.targetVisualNodes.clear();
+        this.skipTargetAnimation = immediate;
     }
 
     gridToWorld(gx, gy) {
@@ -82,10 +93,11 @@ export class Renderer {
             this.ctx.lineTo(p2.x, p2.y);
             this.ctx.stroke();
 
+            // Splitホバー時のプレビュー表示
             if (isHovered) {
                 const midX = (p1.x + p2.x) / 2;
                 const midY = (p1.y + p2.y) / 2;
-                this.drawPoint(midX, midY, 4, this.palette.edgeHighlight);
+                this.drawGhostNode(midX, midY);
             }
         });
 
@@ -129,7 +141,6 @@ export class Renderer {
             const currentStep = state.getCurrentTargetStep();
             const finalGraph = state.getFinalTargetGraph();
             
-            // エッジを表示するかどうか：正解したか、ギブアップした時のみtrue
             const showEdges = state.isSolved || state.isGivenUp;
 
             if (currentStep && finalGraph) {
@@ -193,7 +204,6 @@ export class Renderer {
     }
 
     // 正解ウィンドウ描画
-    // showEdgesがfalseならエッジを描画しない
     drawTargetWindow(stepData, finalData, showEdges) {
         if (!this.targetCtx) return;
         const w = this.targetCanvas.width;
@@ -240,7 +250,56 @@ export class Renderer {
             };
         };
 
-        // 1. エッジ描画 (showEdgesがtrueの場合のみ)
+        // 不要なビジュアルノードを削除
+        const currentIds = new Set(nodes.map(n => n.id));
+        for (const id of this.targetVisualNodes.keys()) {
+            if (!currentIds.has(id)) {
+                this.targetVisualNodes.delete(id);
+            }
+        }
+
+        // ノードの位置を補間（アニメーション処理）
+        nodes.forEach(n => {
+            if (!this.targetVisualNodes.has(n.id)) {
+                let spawnGx = n.gx;
+                let spawnGy = n.gy;
+                
+                // アニメーションをスキップしない場合のみ、隣接ノードから出現させる
+                if (!this.skipTargetAnimation) {
+                    const neighbors = [];
+                    edges.forEach(e => {
+                        if (e.u === n.id) neighbors.push(e.v);
+                        if (e.v === n.id) neighbors.push(e.u);
+                    });
+
+                    let sumGx = 0, sumGy = 0, count = 0;
+                    neighbors.forEach(nid => {
+                        const vNeighbor = this.targetVisualNodes.get(nid);
+                        if (vNeighbor) {
+                            sumGx += vNeighbor.gx;
+                            sumGy += vNeighbor.gy;
+                            count++;
+                        }
+                    });
+
+                    if (count > 0) {
+                        spawnGx = sumGx / count;
+                        spawnGy = sumGy / count;
+                    }
+                }
+
+                this.targetVisualNodes.set(n.id, { gx: spawnGx, gy: spawnGy });
+            }
+
+            const visual = this.targetVisualNodes.get(n.id);
+            visual.gx += (n.gx - visual.gx) * CONFIG.ANIMATION_SPEED;
+            visual.gy += (n.gy - visual.gy) * CONFIG.ANIMATION_SPEED;
+        });
+        
+        // 最初のフレームの処理が終わったらスキップフラグは解除
+        this.skipTargetAnimation = false;
+
+        // 1. エッジ描画
         if (showEdges) {
             ctx.lineWidth = dynamicLineWidth;
             ctx.strokeStyle = this.palette.edge;
@@ -249,8 +308,11 @@ export class Renderer {
                 const n1 = nodes.find(n => n.id === e.u);
                 const n2 = nodes.find(n => n.id === e.v);
                 if (n1 && n2) {
-                    const p1 = getScreenPos(n1.gx, n1.gy);
-                    const p2 = getScreenPos(n2.gx, n2.gy);
+                    const v1 = this.targetVisualNodes.get(n1.id) || n1;
+                    const v2 = this.targetVisualNodes.get(n2.id) || n2;
+
+                    const p1 = getScreenPos(v1.gx, v1.gy);
+                    const p2 = getScreenPos(v2.gx, v2.gy);
                     ctx.beginPath();
                     ctx.moveTo(p1.x, p1.y);
                     ctx.lineTo(p2.x, p2.y);
@@ -261,7 +323,9 @@ export class Renderer {
 
         // 2. ノード描画
         nodes.forEach(n => {
-            const p = getScreenPos(n.gx, n.gy);
+            const visual = this.targetVisualNodes.get(n.id) || n;
+            const p = getScreenPos(visual.gx, visual.gy);
+
             ctx.beginPath();
             ctx.arc(p.x, p.y, dynamicRadius, 0, Math.PI * 2);
             ctx.fillStyle = n.color === 0 ? this.palette.node0 : this.palette.node1;

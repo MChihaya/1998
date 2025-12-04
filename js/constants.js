@@ -17,8 +17,8 @@ export const PALETTES = {
         edge: '#333333',
         edgeHighlight: '#ff9800',
         previewLine: '#ff9800', // プレビュー用の色
-        ghostNode: 'rgba(255, 152, 0, 0.3)', // Grow予定地のゴースト
-        ghostBorder: '#ff9800',
+        ghostNode: 'rgba(255, 255, 255, 0.6)', // 変更: 白色の半透明
+        ghostBorder: '#333333', // 変更: 白背景でも見やすい濃いグレー
     },
     dark: {
         grid: '#3c4043',
@@ -29,7 +29,7 @@ export const PALETTES = {
         edge: '#aaaaaa',
         edgeHighlight: '#ffca28',
         previewLine: '#ffca28',
-        ghostNode: 'rgba(255, 202, 40, 0.3)',
-        ghostBorder: '#ffca28',
+        ghostNode: 'rgba(255, 255, 255, 0.5)', // 変更: 白色の半透明
+        ghostBorder: '#ffffff', // 変更: 白
     }
 };

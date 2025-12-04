@@ -11,7 +11,7 @@ const btnTheme = document.getElementById('btn-theme');
 
 const panelChallenge = document.getElementById('challenge-panel');
 const winTarget = document.getElementById('target-window');
-const txtTargetCaption = document.getElementById('target-caption'); // 追加
+const txtTargetCaption = document.getElementById('target-caption');
 const panelSandbox = document.getElementById('sandbox-controls');
 
 const btnStartChallenge = document.getElementById('btn-start-challenge');
@@ -88,11 +88,13 @@ function init() {
         const count = parseInt(inpNodeCount.value) || 5;
         state.startChallenge(Math.max(3, count));
         renderer.centerCamera();
+        renderer.resetTargetView(true); // 変更: trueでアニメーションスキップ
         updateUI();
     });
 
     btnQuitChallenge.addEventListener('click', () => {
         state.quitChallenge();
+        renderer.resetTargetView(true); // 変更: リセット時も即時反映
         updateUI();
     });
 
@@ -105,6 +107,7 @@ function init() {
         const count = parseInt(inpNodeCount.value) || 5;
         state.newProblem(Math.max(3, count));
         renderer.centerCamera();
+        renderer.resetTargetView(true); // 変更: trueでアニメーションスキップ
         updateUI();
     });
 
