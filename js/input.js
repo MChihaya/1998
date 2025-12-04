@@ -27,7 +27,6 @@ export class InputHandler {
 
     handleMouseDown(e) {
         if (this.state.isSolved) return;
-        const pos = this.getMousePos(e);
         
         // パン操作の開始
         this.isPanning = true;
@@ -101,6 +100,44 @@ export class InputHandler {
         this.renderer.camera.y += (worldAfter.y - worldBefore.y) * newZoom;
     }
 
+    // --- モバイル対応用メソッド ---
+
+    _triggerMouseEvent(type, touchEvent) {
+        if (touchEvent.changedTouches.length === 0) return;
+        const touch = touchEvent.changedTouches[0];
+        
+        // 疑似マウスイベントオブジェクトを作成
+        const mouseEvent = {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            preventDefault: () => touchEvent.preventDefault(),
+            stopPropagation: () => touchEvent.stopPropagation()
+        };
+
+        if (type === 'mousedown') this.handleMouseDown(mouseEvent);
+        else if (type === 'mousemove') this.handleMouseMove(mouseEvent);
+        else if (type === 'mouseup') this.handleMouseUp(mouseEvent);
+    }
+
+    handleTouchStart(e) {
+        e.preventDefault();
+        // タッチ開始時は、位置合わせ(move)とクリック(down)の両方を行う
+        this._triggerMouseEvent('mousemove', e);
+        this._triggerMouseEvent('mousedown', e);
+    }
+
+    handleTouchMove(e) {
+        e.preventDefault();
+        this._triggerMouseEvent('mousemove', e);
+    }
+
+    handleTouchEnd(e) {
+        e.preventDefault();
+        this._triggerMouseEvent('mouseup', e);
+    }
+
+    // --- 既存のロジック ---
+
     // 最も近いアクションを探す
     updateHoverAction(worldPos) {
         const threshold = CONFIG.CLICK_THRESHOLD / this.renderer.camera.zoom;
@@ -121,23 +158,17 @@ export class InputHandler {
         });
 
         // 2. Grow (ノードから空きマスへの仮想エッジ上にあるか)
-        // 全ノードに対し、上下左右の空きマスへの「線分」との距離を測る
         const directions = [[1,0], [-1,0], [0,1], [0,-1]];
         this.state.nodes.forEach(node => {
             directions.forEach(([dx, dy]) => {
                 const tx = node.gx + dx;
                 const ty = node.gy + dy;
                 
-                // すでにノードがある場所へはGrowできない
                 if (this.state.nodes.some(n => n.gx === tx && n.gy === ty)) return;
 
-                // ノード中心から、隣のグリッド中心への線分
-                // アニメーション中のノード位置(vx,vy)を使う
                 const targetVx = (tx * CONFIG.GRID_SIZE);
                 const targetVy = -(ty * CONFIG.GRID_SIZE);
 
-                // 簡易的に線分として判定
-                // (node.vx, node.vy) -> (targetVx, targetVy)
                 const dist = this.distToSegmentRaw(worldPos, node.vx, node.vy, targetVx, targetVy);
 
                 if (dist < minDist) {
@@ -150,12 +181,10 @@ export class InputHandler {
         this.hoveredAction = minInfo;
     }
 
-    // ノードオブジェクト間の距離
     distToSegment(p, v, w) {
         return this.distToSegmentRaw(p, v.vx, v.vy, w.vx, w.vy);
     }
 
-    // 座標間の距離
     distToSegmentRaw(p, x1, y1, x2, y2) {
         const l2 = (x1 - x2)**2 + (y1 - y2)**2;
         if (l2 === 0) return Math.hypot(p.x - x1, p.y - y1);

@@ -8,6 +8,7 @@ const targetCanvas = document.getElementById('targetCanvas');
 const btnUndo = document.getElementById('btn-undo');
 const btnReset = document.getElementById('btn-reset');
 const btnTheme = document.getElementById('btn-theme');
+const btnResetCamera = document.getElementById('btn-reset-camera'); // 追加
 
 const panelChallenge = document.getElementById('challenge-panel');
 const winTarget = document.getElementById('target-window');
@@ -41,10 +42,16 @@ function init() {
     renderer.resize();
     renderer.centerCamera();
 
+    // マウスイベント
     canvas.addEventListener('mousedown', (e) => input.handleMouseDown(e));
     window.addEventListener('mousemove', (e) => input.handleMouseMove(e));
     window.addEventListener('mouseup', (e) => input.handleMouseUp(e));
     canvas.addEventListener('wheel', (e) => input.handleWheel(e), { passive: false });
+
+    // タッチイベント（スマホ対応）
+    canvas.addEventListener('touchstart', (e) => input.handleTouchStart(e), { passive: false });
+    canvas.addEventListener('touchmove', (e) => input.handleTouchMove(e), { passive: false });
+    canvas.addEventListener('touchend', (e) => input.handleTouchEnd(e), { passive: false });
 
     input.onAction = (action) => {
         if (state.isSolved) return;
@@ -77,6 +84,11 @@ function init() {
         updateUI();
     });
 
+    // 追加: 視点リセット
+    btnResetCamera.addEventListener('click', () => {
+        renderer.centerCamera();
+    });
+
     btnTheme.addEventListener('click', toggleTheme);
     window.addEventListener('keydown', (e) => {
         const key = e.key.toLowerCase();
@@ -85,16 +97,23 @@ function init() {
     });
 
     btnStartChallenge.addEventListener('click', () => {
-        const count = parseInt(inpNodeCount.value) || 5;
-        state.startChallenge(Math.max(3, count));
+        let count = parseInt(inpNodeCount.value) || 5;
+        
+        // 3未満は3に、100超過は100に制限する
+        count = Math.min(100, Math.max(3, count));
+        
+        // 入力欄の数値も補正後の値に更新しておく
+        inpNodeCount.value = count;
+
+        state.startChallenge(count);
         renderer.centerCamera();
-        renderer.resetTargetView(true); // 変更: trueでアニメーションスキップ
+        renderer.resetTargetView(true);
         updateUI();
     });
 
     btnQuitChallenge.addEventListener('click', () => {
         state.quitChallenge();
-        renderer.resetTargetView(true); // 変更: リセット時も即時反映
+        renderer.resetTargetView(true); // リセット時も即時反映
         updateUI();
     });
 
@@ -104,10 +123,15 @@ function init() {
     });
 
     btnNext.addEventListener('click', () => {
-        const count = parseInt(inpNodeCount.value) || 5;
-        state.newProblem(Math.max(3, count));
+        let count = parseInt(inpNodeCount.value) || 5;
+        
+        // ここでも同様に制限
+        count = Math.min(100, Math.max(3, count));
+        inpNodeCount.value = count;
+
+        state.newProblem(count);
         renderer.centerCamera();
-        renderer.resetTargetView(true); // 変更: trueでアニメーションスキップ
+        renderer.resetTargetView(true);
         updateUI();
     });
 
@@ -141,7 +165,7 @@ function updateUI() {
     if (state.mode === 'challenge') {
         panelChallenge.style.display = 'flex';
         winTarget.style.display = 'flex';
-        txtTargetCaption.style.display = 'block'; // 注釈を表示
+        txtTargetCaption.style.display = 'block'; 
         panelSandbox.style.display = 'none';
         btnQuitChallenge.style.display = 'inline-block';
         
