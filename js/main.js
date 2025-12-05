@@ -33,6 +33,10 @@ const btnReplayPrev = document.getElementById('btn-replay-prev');
 const btnReplayNext = document.getElementById('btn-replay-next');
 const txtReplayStep = document.getElementById('replay-step-text');
 
+// スマホ用トグルボタン
+const btnToggleControls = document.getElementById('btn-toggle-controls');
+const controlsDiv = document.querySelector('.controls');
+
 const state = new GameState();
 const renderer = new Renderer(canvas, targetCanvas);
 const input = new InputHandler(canvas, renderer, state);
@@ -154,6 +158,22 @@ function init() {
     modalHelp.addEventListener('click', (e) => {
         if (e.target === modalHelp) modalHelp.style.display = 'none';
     });
+
+    // 追加: スマホ用コントロール表示切り替え
+    if (btnToggleControls) {
+        btnToggleControls.addEventListener('click', (e) => {
+            // イベントの伝播を止める（念のため）
+            e.stopPropagation();
+
+            if (!controlsDiv) return;
+            
+            // パネルの表示/非表示
+            controlsDiv.classList.toggle('hidden');
+            
+            // ボタン自身の見た目変更（矢印の向き用）
+            btnToggleControls.classList.toggle('closed');
+        });
+    }
 
     loadTheme();
     loop();

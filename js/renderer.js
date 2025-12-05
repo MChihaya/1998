@@ -13,9 +13,8 @@ export class Renderer {
         this.camera = { x: 0, y: 0, zoom: 1.0 };
         this.palette = PALETTES.light;
 
-        // ターゲットウィンドウのアニメーション用状態保持
         this.targetVisualNodes = new Map();
-        this.skipTargetAnimation = false; // アニメーションスキップ用フラグ
+        this.skipTargetAnimation = false;
     }
 
     resize() {
@@ -35,8 +34,6 @@ export class Renderer {
         this.camera.zoom = 1.0;
     }
 
-    // ターゲットウィンドウのアニメーション状態をリセット
-    // immediate=true の場合、次の描画時にアニメーションせず即座に位置を合わせる
     resetTargetView(immediate = false) {
         this.targetVisualNodes.clear();
         this.skipTargetAnimation = immediate;
@@ -73,9 +70,6 @@ export class Renderer {
         const { nodes, edges } = state;
         const { hoveredAction } = inputState;
 
-        // --- メインキャンバス描画 ---
-
-        // 1. エッジ
         this.ctx.lineWidth = 3 * this.camera.zoom;
         edges.forEach((e, i) => {
             const n1 = nodes.find(n => n.id === e.u);
@@ -93,7 +87,6 @@ export class Renderer {
             this.ctx.lineTo(p2.x, p2.y);
             this.ctx.stroke();
 
-            // Splitホバー時のプレビュー表示
             if (isHovered) {
                 const midX = (p1.x + p2.x) / 2;
                 const midY = (p1.y + p2.y) / 2;
@@ -101,7 +94,6 @@ export class Renderer {
             }
         });
 
-        // 2. Growプレビュー
         if (hoveredAction && hoveredAction.type === 'grow') {
             const src = nodes.find(n => n.id === hoveredAction.srcId);
             if (src) {
@@ -122,7 +114,6 @@ export class Renderer {
             }
         }
 
-        // 3. ノード
         nodes.forEach(n => {
             const p = this.worldToScreen(n.vx, n.vy);
             const r = CONFIG.NODE_RADIUS * this.camera.zoom;
@@ -136,7 +127,6 @@ export class Renderer {
             this.ctx.stroke();
         });
 
-        // --- ターゲットウィンドウ更新 ---
         if (state.mode === 'challenge' && state.targetGraph) {
             const currentStep = state.getCurrentTargetStep();
             const finalGraph = state.getFinalTargetGraph();
@@ -203,7 +193,7 @@ export class Renderer {
         this.ctx.stroke();
     }
 
-    // 正解ウィンドウ描画
+    // 問題ウィンドウの描画
     drawTargetWindow(stepData, finalData, showEdges) {
         if (!this.targetCtx) return;
         const w = this.targetCanvas.width;
@@ -226,14 +216,36 @@ export class Renderer {
             if (n.gy > maxY) maxY = n.gy;
         });
 
-        const margin = 1.5; 
-        const widthG = (maxX - minX) + margin * 2;
-        const heightG = (maxY - minY) + margin * 2;
+        // --- レイアウト修正 ---
+        
+        // 画面幅が600未満(スマホ)かどうか判定
+        const isMobile = window.innerWidth < 600;
 
-        const scaleX = w / widthG;
-        const scaleY = h / heightG;
+        // 内部座標系(240px)におけるパディング設定
+        // スマホの場合: 画面上で小さく表示されるため、相対的に余白を大きく確保する (32px)
+        // PCの場合: 20pxで十分
+        const screenPadding = isMobile ? 32 : 20;
+
+        // グリッドのサイズ計算
+        const gridWidth = Math.max(1, maxX - minX);
+        const gridHeight = Math.max(1, maxY - minY);
+
+        // 描画可能エリア
+        const availW = w - screenPadding * 2;
+        const availH = h - screenPadding * 2;
+
+        const scaleX = availW / gridWidth;
+        const scaleY = availH / gridHeight;
         let scale = Math.min(scaleX, scaleY);
+        
+        // 1. ノードが大きくなりすぎないように見た目のためのキャップ
         if (scale > 50) scale = 50; 
+        
+        // 2. ノードが見切れないための安全キャップ
+        // 半径(scale*0.25) が screenPadding を超えないように制限する
+        // 安全率を見て screenPadding の3倍程度まで許容
+        const maxSafeScale = screenPadding * 3.0;
+        if (scale > maxSafeScale) scale = maxSafeScale;
 
         const dynamicRadius = Math.max(3, scale * 0.25);
         const dynamicLineWidth = Math.max(1, dynamicRadius * 0.4);
@@ -250,7 +262,6 @@ export class Renderer {
             };
         };
 
-        // 不要なビジュアルノードを削除
         const currentIds = new Set(nodes.map(n => n.id));
         for (const id of this.targetVisualNodes.keys()) {
             if (!currentIds.has(id)) {
@@ -258,13 +269,11 @@ export class Renderer {
             }
         }
 
-        // ノードの位置を補間（アニメーション処理）
         nodes.forEach(n => {
             if (!this.targetVisualNodes.has(n.id)) {
                 let spawnGx = n.gx;
                 let spawnGy = n.gy;
                 
-                // アニメーションをスキップしない場合のみ、隣接ノードから出現させる
                 if (!this.skipTargetAnimation) {
                     const neighbors = [];
                     edges.forEach(e => {
@@ -296,10 +305,8 @@ export class Renderer {
             visual.gy += (n.gy - visual.gy) * CONFIG.ANIMATION_SPEED;
         });
         
-        // 最初のフレームの処理が終わったらスキップフラグは解除
         this.skipTargetAnimation = false;
 
-        // 1. エッジ描画
         if (showEdges) {
             ctx.lineWidth = dynamicLineWidth;
             ctx.strokeStyle = this.palette.edge;
@@ -321,7 +328,6 @@ export class Renderer {
             });
         }
 
-        // 2. ノード描画
         nodes.forEach(n => {
             const visual = this.targetVisualNodes.get(n.id) || n;
             const p = getScreenPos(visual.gx, visual.gy);
