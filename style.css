@@ -26,6 +26,13 @@
     --btn-active: #48484a;
     --btn-text: #f5f5f7;
     --btn-border: #5c5c5e;
+    --accent-color: #0a84ff;
+}
+
+[data-theme="dark"] #btn-start-challenge:hover:not(:disabled), 
+[data-theme="dark"] #btn-next:hover:not(:disabled), 
+[data-theme="dark"] .primary-btn:hover:not(:disabled) { 
+    background: #0066cc; 
 }
 
 body, html {
