@@ -16,6 +16,14 @@ export class InputHandler {
         this.lastY = 0;
         this.dragThreshold = 5; // ドラッグと判定する最小移動距離（ピクセル）
 
+        // ピンチズーム用
+        this.lastPinchDistance = 0;
+        this.isPinching = false;
+
+        // タッチイベント用
+        this.isTouchEvent = false;
+        this.touchMoved = false;
+
         // コールバック
         this.onAction = null;
         this.onEdit = null; // 検証モード用
@@ -34,7 +42,9 @@ export class InputHandler {
         
         // パン操作の開始
         this.isPanning = true;
-        this.isDragging = false;
+        if (!this.isTouchEvent) {
+            this.isDragging = false;
+        }
         this.dragStartX = e.clientX;
         this.dragStartY = e.clientY;
         this.lastX = e.clientX;
@@ -54,7 +64,9 @@ export class InputHandler {
             const distance = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
             
             if (distance > this.dragThreshold) {
-                this.isDragging = true;
+                if (!this.isTouchEvent) {
+                    this.isDragging = true;
+                }
             }
             
             this.renderer.camera.x += dx;
@@ -62,7 +74,8 @@ export class InputHandler {
             this.lastX = e.clientX;
             this.lastY = e.clientY;
             
-            this.canvas.style.cursor = this.isDragging ? 'grabbing' : 'default';
+            const dragging = this.isTouchEvent ? this.touchMoved : this.isDragging;
+            this.canvas.style.cursor = dragging ? 'grabbing' : 'default';
             return;
         }
 
@@ -80,8 +93,19 @@ export class InputHandler {
     }
 
     handleMouseUp(e) {
-        // ドラッグしていなかった場合のみアクションを実行
-        if (this.isPanning && !this.isDragging) {
+        // ボタンやUI要素上でのクリックは無視
+        if (e.target && e.target !== this.canvas) {
+            this.isPanning = false;
+            this.isDragging = false;
+            this.isTouchEvent = false;
+            this.touchMoved = false;
+            return;
+        }
+        
+        // タッチイベントの場合はtouchMovedフラグを、マウスイベントの場合はisDraggingフラグを使う
+        const wasNotDragging = this.isTouchEvent ? !this.touchMoved : !this.isDragging;
+        
+        if (wasNotDragging) {
             if (this.state.mode === 'verification') {
                 // 検証モードのクリック処理
                 const pos = this.getMousePos(e);
@@ -90,14 +114,25 @@ export class InputHandler {
                 const gy = Math.round(-worldPos.y / CONFIG.GRID_SIZE); // Y軸反転
                 
                 if (this.onEdit) this.onEdit(gx, gy);
-            } else if (this.hoveredAction) {
-                if (this.onAction) this.onAction(this.hoveredAction);
-                this.hoveredAction = null;
+            } else {
+                // タッチイベントの場合、タップ位置でhoveredActionを更新
+                if (this.isTouchEvent && !this.state.isSolved) {
+                    const pos = this.getMousePos(e);
+                    const worldPos = this.renderer.screenToWorld(pos.x, pos.y);
+                    this.updateHoverAction(worldPos);
+                }
+                
+                if (this.hoveredAction) {
+                    if (this.onAction) this.onAction(this.hoveredAction);
+                    this.hoveredAction = null;
+                }
             }
         }
         
         this.isPanning = false;
         this.isDragging = false;
+        this.isTouchEvent = false;
+        this.touchMoved = false;
         this.canvas.style.cursor = 'grab';
     }
 
@@ -134,19 +169,76 @@ export class InputHandler {
     }
 
     handleTouchStart(e) {
-        e.preventDefault();
-        this._triggerMouseEvent('mousemove', e);
-        this._triggerMouseEvent('mousedown', e);
+        if (e.touches.length === 2) {
+            // ピンチズーム開始
+            if (e.cancelable) e.preventDefault();
+            this.isPinching = true;
+            this.isPanning = false;
+            this.isDragging = false;
+            this.isTouchEvent = true;
+            this.touchMoved = false;
+            const distance = this.getTouchDistance(e.touches[0], e.touches[1]);
+            this.lastPinchDistance = distance;
+        } else if (e.touches.length === 1) {
+            if (e.cancelable) e.preventDefault();
+            this.isPinching = false;
+            this.isTouchEvent = true;
+            this.touchMoved = false;
+            this._triggerMouseEvent('mousedown', e);
+        }
     }
 
     handleTouchMove(e) {
-        e.preventDefault();
-        this._triggerMouseEvent('mousemove', e);
+        if (e.touches.length === 2 && this.isPinching) {
+            // ピンチズーム処理
+            if (e.cancelable) e.preventDefault();
+            this.touchMoved = true;
+            const distance = this.getTouchDistance(e.touches[0], e.touches[1]);
+            const delta = distance - this.lastPinchDistance;
+            
+            // ズーム中心を2点の中心に
+            const rect = this.canvas.getBoundingClientRect();
+            const centerX = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - rect.left;
+            const centerY = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - rect.top;
+            
+            const worldBefore = this.renderer.screenToWorld(centerX, centerY);
+            const zoomFactor = 1 + (delta / distance) * 2;
+            const newZoom = Math.max(0.1, Math.min(5.0, this.renderer.camera.zoom * zoomFactor));
+            this.renderer.camera.zoom = newZoom;
+            const worldAfter = this.renderer.screenToWorld(centerX, centerY);
+            
+            this.renderer.camera.x += (worldAfter.x - worldBefore.x) * newZoom;
+            this.renderer.camera.y += (worldAfter.y - worldBefore.y) * newZoom;
+            
+            this.lastPinchDistance = distance;
+        } else if (e.touches.length === 1 && !this.isPinching) {
+            if (e.cancelable) e.preventDefault();
+            this.touchMoved = true;
+            this._triggerMouseEvent('mousemove', e);
+        }
     }
 
     handleTouchEnd(e) {
-        e.preventDefault();
-        this._triggerMouseEvent('mouseup', e);
+        // ピンチ中でなければ通常のマウスアップ処理
+        if (this.isPinching) {
+            // 2本指が離れたらピンチ終了
+            if (e.touches.length < 2) {
+                this.isPinching = false;
+                this.isDragging = false;
+            }
+        } else {
+            // 通常のタップ/クリック処理
+            if (e.touches.length === 0) {
+                if (e.cancelable) e.preventDefault();
+                this._triggerMouseEvent('mouseup', e);
+            }
+        }
+    }
+
+    getTouchDistance(touch1, touch2) {
+        const dx = touch2.clientX - touch1.clientX;
+        const dy = touch2.clientY - touch1.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 
     updateHoverAction(worldPos) {

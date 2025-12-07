@@ -40,12 +40,15 @@ body, html {
     overflow: hidden; background-color: var(--bg-color);
     color: var(--text-color); font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
     user-select: none;
-    /* スマホ対応: スクロールやズームを防止 */
-    touch-action: none;
+    /* スマホ対応: スクロールやズームを防止（ただしボタンは除外） */
+    touch-action: manipulation;
 }
 canvas { 
     display: block; outline: none;
     touch-action: none;
+}
+button, input {
+    touch-action: manipulation;
 }
 
 .ui-layer {
@@ -135,9 +138,25 @@ button {
     background: var(--btn-bg); border: 1px solid var(--btn-border); color: var(--btn-text);
     padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 0.9rem;
     font-family: inherit;
-    /* ★以下2行を追加してボタンがつぶれないようにする★ */
     white-space: nowrap;
     flex-shrink: 0;
+    /* Safari用のタップハイライトとタップ改善 */
+    -webkit-tap-highlight-color: rgba(0, 113, 227, 0.3);
+    -webkit-user-select: none;
+    user-select: none;
+    /* タップ領域を確保 */
+    min-height: 36px;
+    position: relative;
+}
+/* タップ領域を拡大する疑似要素（トグルボタンとアイコンボタンは除外） */
+button:not(#btn-toggle-controls):not(.icon-btn)::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    right: -8px;
+    bottom: -8px;
+    z-index: -1;
 }
 button:hover:not(:disabled) { background: var(--btn-hover); transform: translateY(-1px); }
 button:active:not(:disabled) { background: var(--btn-active); transform: translateY(0); }
@@ -277,6 +296,7 @@ button[data-key]::after {
         display: flex; flex-direction: column;
         align-items: center;
         pointer-events: auto;
+        z-index: 100;
         
         background: var(--panel-bg);
         border-top: 1px solid var(--panel-border);
@@ -285,9 +305,12 @@ button[data-key]::after {
         
         padding: 10px 10px 20px 10px; /* 下部にiPhoneのホームバー用余白 */
         box-sizing: border-box;
-        z-index: 100;
 
         transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    
+    .control-group {
+        pointer-events: auto;
     }
     
     /* 隠すとき: 自分の高さ分だけ下へスライド */

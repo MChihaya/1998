@@ -64,6 +64,15 @@ function init() {
     canvas.addEventListener('touchmove', (e) => input.handleTouchMove(e), { passive: false });
     canvas.addEventListener('touchend', (e) => input.handleTouchEnd(e), { passive: false });
 
+    // ターゲットウィンドウのイベント伝播を防ぐ
+    const stopPropagation = (e) => {
+        e.stopPropagation();
+    };
+    winTarget.addEventListener('mousedown', stopPropagation);
+    winTarget.addEventListener('touchstart', stopPropagation, { passive: false });
+    winTarget.addEventListener('click', stopPropagation);
+    winTarget.addEventListener('touchend', stopPropagation, { passive: false });
+
     input.onAction = (action) => {
         if (state.isSolved) return;
         
@@ -151,14 +160,25 @@ function init() {
     });
 
     // --- 検証モード ---
-    btnVerificationMode.addEventListener('click', () => {
+    const handleVerificationClick = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         state.startVerification();
         renderer.centerCamera();
         renderer.resetTargetView(true);
         updateUI();
-    });
+    };
+    
+    btnVerificationMode.addEventListener('click', handleVerificationClick, { passive: false });
+    btnVerificationMode.addEventListener('touchend', handleVerificationClick, { passive: false });
 
-    btnSolve.addEventListener('click', () => {
+    const handleSolveClick = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         btnSolve.disabled = true;
         btnSolve.innerText = "探索中...";
         // UI更新のため少し待つ
@@ -173,23 +193,47 @@ function init() {
             btnSolve.innerText = "答えの確認";
             updateUI();
         }, 50);
-    });
+    };
+    
+    btnSolve.addEventListener('click', handleSolveClick, { passive: false });
+    btnSolve.addEventListener('touchend', handleSolveClick, { passive: false });
 
-    btnQuitVerification.addEventListener('click', () => {
+    const handleQuitVerificationClick = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         state.quitChallenge(); // サンドボックスに戻る
         renderer.resetTargetView(true);
         updateUI();
-    });
+    };
+    
+    btnQuitVerification.addEventListener('click', handleQuitVerificationClick, { passive: false });
+    btnQuitVerification.addEventListener('touchend', handleQuitVerificationClick, { passive: false });
 
     // --- 再生 ---
-    btnReplayPrev.addEventListener('click', () => {
+    const handleReplayPrevClick = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         state.stepReplay(-1);
         updateUI();
-    });
-    btnReplayNext.addEventListener('click', () => {
+    };
+    
+    const handleReplayNextClick = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         state.stepReplay(1);
         updateUI();
-    });
+    };
+    
+    btnReplayPrev.addEventListener('click', handleReplayPrevClick, { passive: false });
+    btnReplayPrev.addEventListener('touchend', handleReplayPrevClick, { passive: false });
+    btnReplayNext.addEventListener('click', handleReplayNextClick, { passive: false });
+    btnReplayNext.addEventListener('touchend', handleReplayNextClick, { passive: false });
 
     // ヘルプ
     btnHelp.addEventListener('click', () => {
