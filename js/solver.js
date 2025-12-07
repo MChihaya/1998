@@ -35,28 +35,37 @@ export class GraphSolver {
             };
         }
 
-        // マンハッタン距離1のノード間にエッジを構築（木構造を仮定）
-        const initialEdges = this.buildTreeEdges(this.targetNodes);
+        // 可能なすべての木構造パターンを生成
+        const allTreePatterns = this.generateAllTreePatterns(this.targetNodes);
         
-        if (!this.isConnected(this.targetNodes, initialEdges)) {
-            console.log("グラフが連結ではありません");
+        if (allTreePatterns.length === 0) {
+            console.log("連結な木構造を構築できません");
             return null;
         }
 
-        // 逆方向BFSで探索（targetから1ノードまで）
-        const result = this.reverseBfsSearch(initialEdges);
-        
-        if (result) {
-            // 逆順だったので反転してhistory形式に変換
-            const history = result.steps.reverse();
-            return {
-                nodes: this.targetNodes,
-                edges: initialEdges,
-                history: history
-            };
+        console.log(`${allTreePatterns.length}個の異なる木構造パターンを試します`);
+
+        // 各パターンで探索を試みる
+        for (let i = 0; i < allTreePatterns.length; i++) {
+            const initialEdges = allTreePatterns[i];
+            console.log(`パターン ${i + 1}/${allTreePatterns.length} を探索中...`);
+            
+            // 逆方向BFSで探索（targetから1ノードまで）
+            const result = this.reverseBfsSearch(initialEdges);
+            
+            if (result) {
+                // 逆順だったので反転してhistory形式に変換
+                const history = result.steps.reverse();
+                console.log(`パターン ${i + 1} で解が見つかりました！`);
+                return {
+                    nodes: this.targetNodes,
+                    edges: initialEdges,
+                    history: history
+                };
+            }
         }
         
-        console.log("解が見つかりませんでした");
+        console.log("すべてのパターンで解が見つかりませんでした");
         return null;
     }
 
@@ -256,34 +265,80 @@ export class GraphSolver {
         return edges.map(e => ({ ...e }));
     }
 
-    // マンハッタン距離1のノード間に全方位的にエッジを構築（木構造になるように）
-    buildTreeEdges(nodes) {
-        const edges = [];
-        const visited = new Set();
+    // すべての可能な木構造パターンを生成
+    generateAllTreePatterns(nodes) {
+        if (nodes.length === 0) return [[]];
+        if (nodes.length === 1) return [[]];
 
-        // BFSで木を構築
-        if (nodes.length === 0) return edges;
+        const allPatterns = [];
         
-        const queue = [nodes[0]];
-        visited.add(nodes[0].id);
+        // 各ノードをルートとして試す
+        for (const root of nodes) {
+            const patterns = this.buildTreesFromRoot(nodes, root);
+            allPatterns.push(...patterns);
+        }
 
-        while (queue.length > 0) {
-            const current = queue.shift();
+        // 重複を除去（エッジの組み合わせが同じものは除外）
+        const uniquePatterns = [];
+        const seen = new Set();
+
+        for (const pattern of allPatterns) {
+            const key = pattern
+                .map(e => [e.u, e.v].sort((a, b) => a - b).join('-'))
+                .sort()
+                .join('|');
             
-            // マンハッタン距離1の未訪問ノードを探す
-            for (const node of nodes) {
-                if (visited.has(node.id)) continue;
-                
-                const d = Math.abs(node.gx - current.gx) + Math.abs(node.gy - current.gy);
-                if (d === 1) {
-                    edges.push({ u: current.id, v: node.id });
-                    visited.add(node.id);
-                    queue.push(node);
-                }
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniquePatterns.push(pattern);
             }
         }
 
-        return edges;
+        return uniquePatterns;
+    }
+
+    // 指定されたルートから全ての可能な木を生成（DFS）
+    buildTreesFromRoot(nodes, root) {
+        const results = [];
+        
+        const buildTree = (visited, edges) => {
+            // 全ノードを訪問したら完成
+            if (visited.size === nodes.length) {
+                results.push([...edges]);
+                return;
+            }
+
+            // 訪問済みノードに隣接する未訪問ノードを探す
+            const candidates = [];
+            for (const visitedId of visited) {
+                const visitedNode = nodes.find(n => n.id === visitedId);
+                
+                for (const node of nodes) {
+                    if (visited.has(node.id)) continue;
+                    
+                    const d = Math.abs(node.gx - visitedNode.gx) + Math.abs(node.gy - visitedNode.gy);
+                    if (d === 1) {
+                        candidates.push({ from: visitedId, to: node.id });
+                    }
+                }
+            }
+
+            // 候補がなければ木が完成できない（連結でない）
+            if (candidates.length === 0) return;
+
+            // 各候補について再帰的に木を構築
+            for (const candidate of candidates) {
+                const newVisited = new Set(visited);
+                newVisited.add(candidate.to);
+                const newEdges = [...edges, { u: candidate.from, v: candidate.to }];
+                buildTree(newVisited, newEdges);
+            }
+        };
+
+        const initialVisited = new Set([root.id]);
+        buildTree(initialVisited, []);
+
+        return results;
     }
 
     isConnected(nodes, edges) {
