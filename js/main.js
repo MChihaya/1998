@@ -8,12 +8,14 @@ const targetCanvas = document.getElementById('targetCanvas');
 const btnUndo = document.getElementById('btn-undo');
 const btnReset = document.getElementById('btn-reset');
 const btnTheme = document.getElementById('btn-theme');
-const btnResetCamera = document.getElementById('btn-reset-camera'); // 追加
+const btnResetCamera = document.getElementById('btn-reset-camera');
 
 const panelChallenge = document.getElementById('challenge-panel');
+const panelVerification = document.getElementById('verification-panel');
 const winTarget = document.getElementById('target-window');
 const txtTargetCaption = document.getElementById('target-caption');
 const panelSandbox = document.getElementById('sandbox-controls');
+const panelVerificationControls = document.getElementById('verification-controls');
 
 const btnStartChallenge = document.getElementById('btn-start-challenge');
 const btnQuitChallenge = document.getElementById('btn-quit-challenge');
@@ -21,6 +23,11 @@ const btnGiveUp = document.getElementById('btn-giveup');
 const btnNext = document.getElementById('btn-next');
 const txtStatus = document.getElementById('challenge-status');
 const inpNodeCount = document.getElementById('node-count');
+
+// 検証モード用
+const btnVerificationMode = document.getElementById('btn-verification-mode');
+const btnSolve = document.getElementById('btn-solve');
+const btnQuitVerification = document.getElementById('btn-quit-verification');
 
 // ヘルプ用
 const btnHelp = document.getElementById('btn-help');
@@ -52,7 +59,7 @@ function init() {
     window.addEventListener('mouseup', (e) => input.handleMouseUp(e));
     canvas.addEventListener('wheel', (e) => input.handleWheel(e), { passive: false });
 
-    // タッチイベント（スマホ対応）
+    // タッチイベント
     canvas.addEventListener('touchstart', (e) => input.handleTouchStart(e), { passive: false });
     canvas.addEventListener('touchmove', (e) => input.handleTouchMove(e), { passive: false });
     canvas.addEventListener('touchend', (e) => input.handleTouchEnd(e), { passive: false });
@@ -68,9 +75,17 @@ function init() {
         updateUI();
     };
 
+    input.onEdit = (gx, gy) => {
+        state.toggleNode(gx, gy);
+        // 検証モードではターゲット表示はクリアする（編集されたため）
+        state.targetGraph = null;
+        updateUI();
+    };
+
     btnUndo.addEventListener('click', () => {
-        if(state.isSolved) return;
+        if(state.isSolved && state.mode === 'challenge') return;
         state.undo();
+        // アニメーションターゲットをリセット
         state.nodes.forEach(n => {
             n.vx = n.gx * 50; 
             n.vy = -n.gy * 50;
@@ -81,6 +96,9 @@ function init() {
     btnReset.addEventListener('click', () => {
         if (state.mode === 'challenge') {
             while(state.canUndo()) state.undo();
+        } else if (state.mode === 'verification') {
+            state.startVerification(); // 全クリア
+            renderer.centerCamera();
         } else {
             state.reset();
             renderer.centerCamera();
@@ -88,7 +106,6 @@ function init() {
         updateUI();
     });
 
-    // 追加: 視点リセット
     btnResetCamera.addEventListener('click', () => {
         renderer.centerCamera();
     });
@@ -100,13 +117,10 @@ function init() {
         if (key === 'r') btnReset.click();
     });
 
+    // --- チャレンジモード ---
     btnStartChallenge.addEventListener('click', () => {
         let count = parseInt(inpNodeCount.value) || 5;
-        
-        // 3未満は3に、100超過は100に制限する
         count = Math.min(100, Math.max(3, count));
-        
-        // 入力欄の数値も補正後の値に更新しておく
         inpNodeCount.value = count;
 
         state.startChallenge(count);
@@ -117,7 +131,7 @@ function init() {
 
     btnQuitChallenge.addEventListener('click', () => {
         state.quitChallenge();
-        renderer.resetTargetView(true); // リセット時も即時反映
+        renderer.resetTargetView(true);
         updateUI();
     });
 
@@ -128,17 +142,46 @@ function init() {
 
     btnNext.addEventListener('click', () => {
         let count = parseInt(inpNodeCount.value) || 5;
-        
-        // ここでも同様に制限
         count = Math.min(100, Math.max(3, count));
         inpNodeCount.value = count;
-
         state.newProblem(count);
         renderer.centerCamera();
         renderer.resetTargetView(true);
         updateUI();
     });
 
+    // --- 検証モード ---
+    btnVerificationMode.addEventListener('click', () => {
+        state.startVerification();
+        renderer.centerCamera();
+        renderer.resetTargetView(true);
+        updateUI();
+    });
+
+    btnSolve.addEventListener('click', () => {
+        btnSolve.disabled = true;
+        btnSolve.innerText = "探索中...";
+        // UI更新のため少し待つ
+        setTimeout(() => {
+            const success = state.solveVerification();
+            if (success) {
+                renderer.resetTargetView(true);
+            } else {
+                alert("これを作ることはできません。");
+            }
+            btnSolve.disabled = false;
+            btnSolve.innerText = "答えの確認";
+            updateUI();
+        }, 50);
+    });
+
+    btnQuitVerification.addEventListener('click', () => {
+        state.quitChallenge(); // サンドボックスに戻る
+        renderer.resetTargetView(true);
+        updateUI();
+    });
+
+    // --- 再生 ---
     btnReplayPrev.addEventListener('click', () => {
         state.stepReplay(-1);
         updateUI();
@@ -148,7 +191,7 @@ function init() {
         updateUI();
     });
 
-    // ヘルプのイベント
+    // ヘルプ
     btnHelp.addEventListener('click', () => {
         modalHelp.style.display = 'flex';
     });
@@ -159,18 +202,11 @@ function init() {
         if (e.target === modalHelp) modalHelp.style.display = 'none';
     });
 
-    // 追加: スマホ用コントロール表示切り替え
     if (btnToggleControls) {
         btnToggleControls.addEventListener('click', (e) => {
-            // イベントの伝播を止める（念のため）
             e.stopPropagation();
-
             if (!controlsDiv) return;
-            
-            // パネルの表示/非表示
             controlsDiv.classList.toggle('hidden');
-            
-            // ボタン自身の見た目変更（矢印の向き用）
             btnToggleControls.classList.toggle('closed');
         });
     }
@@ -180,24 +216,29 @@ function init() {
 }
 
 function updateUI() {
-    btnUndo.disabled = !state.canUndo() || state.isSolved;
+    btnUndo.disabled = !state.canUndo() || (state.mode === 'challenge' && state.isSolved);
     
+    // 全て非表示にしてから必要なものを出す
+    panelChallenge.style.display = 'none';
+    panelVerification.style.display = 'none';
+    winTarget.style.display = 'none';
+    txtTargetCaption.style.display = 'none';
+    replayControls.style.display = 'none';
+    panelSandbox.style.display = 'none';
+    panelVerificationControls.style.display = 'none';
+    btnQuitChallenge.style.display = 'none';
+
     if (state.mode === 'challenge') {
         panelChallenge.style.display = 'flex';
         winTarget.style.display = 'flex';
         txtTargetCaption.style.display = 'block'; 
-        panelSandbox.style.display = 'none';
         btnQuitChallenge.style.display = 'inline-block';
         
         const showReplay = state.isSolved || state.isGivenUp;
         replayControls.style.display = showReplay ? 'flex' : 'none';
         
         if (showReplay) {
-            const current = state.replayIndex + 1;
-            const total = state.targetHistory.length;
-            txtReplayStep.innerText = `${current} / ${total}`;
-            btnReplayPrev.disabled = state.replayIndex <= 0;
-            btnReplayNext.disabled = state.replayIndex >= total - 1;
+            updateReplayControls();
         }
 
         if (state.isSolved) {
@@ -217,14 +258,29 @@ function updateUI() {
             btnNext.style.display = "none";
         }
 
+    } else if (state.mode === 'verification') {
+        panelVerification.style.display = 'flex';
+        panelVerificationControls.style.display = 'flex';
+        
+        // 解が見つかっている場合
+        if (state.targetGraph) {
+            winTarget.style.display = 'flex';
+            replayControls.style.display = 'flex';
+            updateReplayControls();
+        }
+
     } else {
-        panelChallenge.style.display = 'none';
-        winTarget.style.display = 'none';
-        txtTargetCaption.style.display = 'none';
-        replayControls.style.display = 'none';
+        // Sandbox
         panelSandbox.style.display = 'flex';
-        btnQuitChallenge.style.display = 'none';
     }
+}
+
+function updateReplayControls() {
+    const current = state.replayIndex + 1;
+    const total = state.targetHistory.length;
+    txtReplayStep.innerText = `${current} / ${total}`;
+    btnReplayPrev.disabled = state.replayIndex <= 0;
+    btnReplayNext.disabled = state.replayIndex >= total - 1;
 }
 
 function toggleTheme() {

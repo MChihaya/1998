@@ -1,15 +1,19 @@
 import { GraphGenerator } from './generator.js';
 import { getComponent, normalizeAndHash } from './utils.js';
+import { GraphSolver } from './solver.js';
 
 export class GameState {
     constructor() {
         this.reset();
-        this.mode = 'sandbox'; 
+        this.mode = 'sandbox'; // 'sandbox' | 'challenge' | 'verification'
         this.targetGraph = null;
         this.targetHistory = []; // 正解作成の履歴
         this.replayIndex = 0;    // 現在表示中のステップ
         this.isSolved = false;
         this.isGivenUp = false;
+        
+        // 検証モード用のユニークID管理
+        this.verifNextId = 1;
     }
 
     reset() {
@@ -17,11 +21,21 @@ export class GameState {
         this.edges = [];
         this.historyStack = [];
         this.nextId = 1;
+        this.verifNextId = 1;
     }
 
     startChallenge(nodeCount) {
         this.mode = 'challenge';
         this.newProblem(nodeCount);
+    }
+
+    startVerification() {
+        this.mode = 'verification';
+        this.reset();
+        this.nodes = []; // 検証モードは空からスタート
+        this.edges = [];
+        this.targetGraph = null;
+        this.targetHistory = [];
     }
 
     newProblem(nodeCount) {
@@ -38,8 +52,48 @@ export class GameState {
 
     giveUp() { 
         this.isGivenUp = true; 
-        // ギブアップ時は、再生を最初からスタートさせる（自動再生ではないが、インデックスを戻しておく）
         this.replayIndex = 0;
+    }
+
+    // 検証モード: ソルバー実行
+    solveVerification() {
+        if (this.mode !== 'verification') return false;
+        
+        const result = GraphSolver.solve(this.nodes);
+        if (result) {
+            this.targetGraph = { nodes: result.nodes, edges: result.edges };
+            this.targetHistory = result.history;
+            this.replayIndex = this.targetHistory.length - 1;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // 検証モード: ノードのトグル (なし -> 白 -> 黒 -> なし)
+    toggleNode(gx, gy) {
+        if (this.mode !== 'verification') return;
+        this.save();
+
+        const idx = this.nodes.findIndex(n => n.gx === gx && n.gy === gy);
+        if (idx >= 0) {
+            const node = this.nodes[idx];
+            if (node.color === 0) {
+                // 白 -> 黒
+                node.color = 1;
+            } else {
+                // 黒 -> 削除
+                this.nodes.splice(idx, 1);
+            }
+        } else {
+            // なし -> 白
+            // アニメーション用座標(vx, vy)も設定
+            this.nodes.push({
+                id: this.verifNextId++,
+                gx: gx, gy: gy, color: 0,
+                vx: gx * 50, vy: -gy * 50
+            });
+        }
     }
 
     // 再生コントロール用
@@ -97,7 +151,8 @@ export class GameState {
         const snapshot = {
             nodes: this.nodes.map(n => ({ ...n })),
             edges: JSON.parse(JSON.stringify(this.edges)),
-            nextId: this.nextId
+            nextId: this.nextId,
+            verifNextId: this.verifNextId
         };
         this.historyStack.push(snapshot);
         if (this.historyStack.length > 50) this.historyStack.shift();
@@ -108,6 +163,7 @@ export class GameState {
         const prev = this.historyStack.pop();
         this.edges = prev.edges;
         this.nextId = prev.nextId;
+        this.verifNextId = prev.verifNextId || 1;
         this.nodes = prev.nodes.map(n => n); 
         this.checkSolution();
     }

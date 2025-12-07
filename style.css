@@ -163,7 +163,7 @@ button[data-key]::after {
 }
 
 #btn-start-challenge, #btn-next, .primary-btn { background: var(--accent-color); color: var(--accent-text); border-color: var(--accent-color); }
-#btn-giveup, #btn-quit-challenge { color: var(--danger-color); }
+#btn-giveup, #btn-quit-challenge, #btn-quit-verification { color: var(--danger-color); }
 .status-success { color: var(--success-color); font-weight: bold; }
 .status-fail { color: var(--danger-color); font-weight: bold; }
 .divider { width: 1px; height: 16px; background: var(--btn-border); margin: 0 4px; }

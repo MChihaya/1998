@@ -15,6 +15,10 @@ export class InputHandler {
         this.lastX = 0;
         this.lastY = 0;
         this.dragThreshold = 5; // ドラッグと判定する最小移動距離（ピクセル）
+
+        // コールバック
+        this.onAction = null;
+        this.onEdit = null; // 検証モード用
     }
 
     getMousePos(e) {
@@ -45,7 +49,6 @@ export class InputHandler {
             const dx = e.clientX - this.lastX;
             const dy = e.clientY - this.lastY;
             
-            // ドラッグ判定：最初の位置から一定距離以上移動したらドラッグとみなす
             const totalDx = e.clientX - this.dragStartX;
             const totalDy = e.clientY - this.dragStartY;
             const distance = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
@@ -59,8 +62,13 @@ export class InputHandler {
             this.lastX = e.clientX;
             this.lastY = e.clientY;
             
-            // ドラッグ中はカーソルをつかんでいる状態に
             this.canvas.style.cursor = this.isDragging ? 'grabbing' : 'default';
+            return;
+        }
+
+        // 検証モード時のカーソル
+        if (this.state.mode === 'verification') {
+            this.canvas.style.cursor = 'cell';
             return;
         }
 
@@ -73,9 +81,19 @@ export class InputHandler {
 
     handleMouseUp(e) {
         // ドラッグしていなかった場合のみアクションを実行
-        if (this.isPanning && !this.isDragging && this.hoveredAction) {
-            this.onAction(this.hoveredAction);
-            this.hoveredAction = null;
+        if (this.isPanning && !this.isDragging) {
+            if (this.state.mode === 'verification') {
+                // 検証モードのクリック処理
+                const pos = this.getMousePos(e);
+                const worldPos = this.renderer.screenToWorld(pos.x, pos.y);
+                const gx = Math.round(worldPos.x / CONFIG.GRID_SIZE);
+                const gy = Math.round(-worldPos.y / CONFIG.GRID_SIZE); // Y軸反転
+                
+                if (this.onEdit) this.onEdit(gx, gy);
+            } else if (this.hoveredAction) {
+                if (this.onAction) this.onAction(this.hoveredAction);
+                this.hoveredAction = null;
+            }
         }
         
         this.isPanning = false;
@@ -100,13 +118,9 @@ export class InputHandler {
         this.renderer.camera.y += (worldAfter.y - worldBefore.y) * newZoom;
     }
 
-    // --- モバイル対応用メソッド ---
-
     _triggerMouseEvent(type, touchEvent) {
         if (touchEvent.changedTouches.length === 0) return;
         const touch = touchEvent.changedTouches[0];
-        
-        // 疑似マウスイベントオブジェクトを作成
         const mouseEvent = {
             clientX: touch.clientX,
             clientY: touch.clientY,
@@ -121,7 +135,6 @@ export class InputHandler {
 
     handleTouchStart(e) {
         e.preventDefault();
-        // タッチ開始時は、位置合わせ(move)とクリック(down)の両方を行う
         this._triggerMouseEvent('mousemove', e);
         this._triggerMouseEvent('mousedown', e);
     }
@@ -136,15 +149,11 @@ export class InputHandler {
         this._triggerMouseEvent('mouseup', e);
     }
 
-    // --- 既存のロジック ---
-
-    // 最も近いアクションを探す
     updateHoverAction(worldPos) {
         const threshold = CONFIG.CLICK_THRESHOLD / this.renderer.camera.zoom;
         let minInfo = null;
         let minDist = threshold;
 
-        // 1. Split (既存のエッジ上にあるか)
         this.state.edges.forEach((edge, i) => {
             const u = this.state.nodes.find(n => n.id === edge.u);
             const v = this.state.nodes.find(n => n.id === edge.v);
@@ -157,7 +166,6 @@ export class InputHandler {
             }
         });
 
-        // 2. Grow (ノードから空きマスへの仮想エッジ上にあるか)
         const directions = [[1,0], [-1,0], [0,1], [0,-1]];
         this.state.nodes.forEach(node => {
             directions.forEach(([dx, dy]) => {

@@ -71,46 +71,50 @@ export class Renderer {
         const { hoveredAction } = inputState;
 
         this.ctx.lineWidth = 3 * this.camera.zoom;
-        edges.forEach((e, i) => {
-            const n1 = nodes.find(n => n.id === e.u);
-            const n2 = nodes.find(n => n.id === e.v);
-            if (!n1 || !n2) return;
+        
+        // 検証モード以外ならエッジを描画
+        if (state.mode !== 'verification') {
+            edges.forEach((e, i) => {
+                const n1 = nodes.find(n => n.id === e.u);
+                const n2 = nodes.find(n => n.id === e.v);
+                if (!n1 || !n2) return;
 
-            const p1 = this.worldToScreen(n1.vx, n1.vy);
-            const p2 = this.worldToScreen(n2.vx, n2.vy);
-            
-            const isHovered = hoveredAction && hoveredAction.type === 'split' && hoveredAction.edgeIndex === i;
-            this.ctx.strokeStyle = isHovered ? this.palette.edgeHighlight : this.palette.edge;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(p1.x, p1.y);
-            this.ctx.lineTo(p2.x, p2.y);
-            this.ctx.stroke();
-
-            if (isHovered) {
-                const midX = (p1.x + p2.x) / 2;
-                const midY = (p1.y + p2.y) / 2;
-                this.drawGhostNode(midX, midY);
-            }
-        });
-
-        if (hoveredAction && hoveredAction.type === 'grow') {
-            const src = nodes.find(n => n.id === hoveredAction.srcId);
-            if (src) {
-                const pSrc = this.worldToScreen(src.vx, src.vy);
-                const tWorld = this.gridToWorld(hoveredAction.tx, hoveredAction.ty);
-                const pTarget = this.worldToScreen(tWorld.x, tWorld.y);
-
+                const p1 = this.worldToScreen(n1.vx, n1.vy);
+                const p2 = this.worldToScreen(n2.vx, n2.vy);
+                
+                const isHovered = hoveredAction && hoveredAction.type === 'split' && hoveredAction.edgeIndex === i;
+                this.ctx.strokeStyle = isHovered ? this.palette.edgeHighlight : this.palette.edge;
+                
                 this.ctx.beginPath();
-                this.ctx.moveTo(pSrc.x, pSrc.y);
-                this.ctx.lineTo(pTarget.x, pTarget.y);
-                this.ctx.strokeStyle = this.palette.previewLine;
-                this.ctx.lineWidth = 2 * this.camera.zoom;
-                this.ctx.setLineDash([6, 6]);
+                this.ctx.moveTo(p1.x, p1.y);
+                this.ctx.lineTo(p2.x, p2.y);
                 this.ctx.stroke();
-                this.ctx.setLineDash([]);
 
-                this.drawGhostNode(pTarget.x, pTarget.y);
+                if (isHovered) {
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    this.drawGhostNode(midX, midY);
+                }
+            });
+
+            if (hoveredAction && hoveredAction.type === 'grow') {
+                const src = nodes.find(n => n.id === hoveredAction.srcId);
+                if (src) {
+                    const pSrc = this.worldToScreen(src.vx, src.vy);
+                    const tWorld = this.gridToWorld(hoveredAction.tx, hoveredAction.ty);
+                    const pTarget = this.worldToScreen(tWorld.x, tWorld.y);
+
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(pSrc.x, pSrc.y);
+                    this.ctx.lineTo(pTarget.x, pTarget.y);
+                    this.ctx.strokeStyle = this.palette.previewLine;
+                    this.ctx.lineWidth = 2 * this.camera.zoom;
+                    this.ctx.setLineDash([6, 6]);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+
+                    this.drawGhostNode(pTarget.x, pTarget.y);
+                }
             }
         }
 
@@ -127,11 +131,13 @@ export class Renderer {
             this.ctx.stroke();
         });
 
-        if (state.mode === 'challenge' && state.targetGraph) {
+        // ターゲットウィンドウの描画 (チャレンジモードまたは検証モードで解がある場合)
+        if ((state.mode === 'challenge' || state.mode === 'verification') && state.targetGraph) {
             const currentStep = state.getCurrentTargetStep();
             const finalGraph = state.getFinalTargetGraph();
             
-            const showEdges = state.isSolved || state.isGivenUp;
+            // 検証モードでは「答えの確認」後は常に再生UIが出るので表示
+            const showEdges = state.isSolved || state.isGivenUp || state.mode === 'verification';
 
             if (currentStep && finalGraph) {
                 this.drawTargetWindow(currentStep, finalGraph, showEdges);
@@ -193,7 +199,6 @@ export class Renderer {
         this.ctx.stroke();
     }
 
-    // 問題ウィンドウの描画
     drawTargetWindow(stepData, finalData, showEdges) {
         if (!this.targetCtx) return;
         const w = this.targetCanvas.width;
@@ -206,7 +211,7 @@ export class Renderer {
         const edges = stepData.edges;
         
         const refNodes = finalData.nodes;
-        if (refNodes.length === 0) return;
+        if (!refNodes || refNodes.length === 0) return;
 
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         refNodes.forEach(n => {
@@ -216,34 +221,18 @@ export class Renderer {
             if (n.gy > maxY) maxY = n.gy;
         });
 
-        // --- レイアウト修正 ---
-        
-        // 画面幅が600未満(スマホ)かどうか判定
         const isMobile = window.innerWidth < 600;
-
-        // 内部座標系(240px)におけるパディング設定
-        // スマホの場合: 画面上で小さく表示されるため、相対的に余白を大きく確保する (32px)
-        // PCの場合: 20pxで十分
         const screenPadding = isMobile ? 32 : 20;
 
-        // グリッドのサイズ計算
         const gridWidth = Math.max(1, maxX - minX);
         const gridHeight = Math.max(1, maxY - minY);
-
-        // 描画可能エリア
         const availW = w - screenPadding * 2;
         const availH = h - screenPadding * 2;
-
         const scaleX = availW / gridWidth;
         const scaleY = availH / gridHeight;
         let scale = Math.min(scaleX, scaleY);
         
-        // 1. ノードが大きくなりすぎないように見た目のためのキャップ
         if (scale > 50) scale = 50; 
-        
-        // 2. ノードが見切れないための安全キャップ
-        // 半径(scale*0.25) が screenPadding を超えないように制限する
-        // 安全率を見て screenPadding の3倍程度まで許容
         const maxSafeScale = screenPadding * 3.0;
         if (scale > maxSafeScale) scale = maxSafeScale;
 
