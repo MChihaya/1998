@@ -297,46 +297,64 @@ export class GraphSolver {
         return uniquePatterns;
     }
 
-    // 指定されたルートから全ての可能な木を生成（DFS）
+    // 指定されたルートから全ての可能な木を生成（バックトラック）
     buildTreesFromRoot(nodes, root) {
         const results = [];
+        const n = nodes.length;
         
-        const buildTree = (visited, edges) => {
+        // 隣接リストを事前計算
+        const adjacentPairs = [];
+        for (let i = 0; i < n; i++) {
+            for (let j = i + 1; j < n; j++) {
+                const d = Math.abs(nodes[i].gx - nodes[j].gx) + Math.abs(nodes[i].gy - nodes[j].gy);
+                if (d === 1) {
+                    adjacentPairs.push([nodes[i].id, nodes[j].id]);
+                }
+            }
+        }
+
+        // バックトラックで全ての木を生成
+        const buildTree = (visited, edges, edgeSet) => {
             // 全ノードを訪問したら完成
             if (visited.size === nodes.length) {
                 results.push([...edges]);
                 return;
             }
 
-            // 訪問済みノードに隣接する未訪問ノードを探す
-            const candidates = [];
-            for (const visitedId of visited) {
-                const visitedNode = nodes.find(n => n.id === visitedId);
+            // 訪問済みノードと未訪問ノードを繋ぐエッジを探す
+            for (const [id1, id2] of adjacentPairs) {
+                const hasId1 = visited.has(id1);
+                const hasId2 = visited.has(id2);
                 
-                for (const node of nodes) {
-                    if (visited.has(node.id)) continue;
+                // 片方だけが訪問済みの場合
+                if (hasId1 && !hasId2) {
+                    const edgeKey = [id1, id2].sort((a, b) => a - b).join('-');
+                    if (edgeSet.has(edgeKey)) continue; // 既に使用済み
                     
-                    const d = Math.abs(node.gx - visitedNode.gx) + Math.abs(node.gy - visitedNode.gy);
-                    if (d === 1) {
-                        candidates.push({ from: visitedId, to: node.id });
-                    }
+                    const newVisited = new Set(visited);
+                    newVisited.add(id2);
+                    const newEdges = [...edges, { u: id1, v: id2 }];
+                    const newEdgeSet = new Set(edgeSet);
+                    newEdgeSet.add(edgeKey);
+                    
+                    buildTree(newVisited, newEdges, newEdgeSet);
+                } else if (!hasId1 && hasId2) {
+                    const edgeKey = [id1, id2].sort((a, b) => a - b).join('-');
+                    if (edgeSet.has(edgeKey)) continue; // 既に使用済み
+                    
+                    const newVisited = new Set(visited);
+                    newVisited.add(id1);
+                    const newEdges = [...edges, { u: id2, v: id1 }];
+                    const newEdgeSet = new Set(edgeSet);
+                    newEdgeSet.add(edgeKey);
+                    
+                    buildTree(newVisited, newEdges, newEdgeSet);
                 }
-            }
-
-            // 候補がなければ木が完成できない（連結でない）
-            if (candidates.length === 0) return;
-
-            // 各候補について再帰的に木を構築
-            for (const candidate of candidates) {
-                const newVisited = new Set(visited);
-                newVisited.add(candidate.to);
-                const newEdges = [...edges, { u: candidate.from, v: candidate.to }];
-                buildTree(newVisited, newEdges);
             }
         };
 
         const initialVisited = new Set([root.id]);
-        buildTree(initialVisited, []);
+        buildTree(initialVisited, [], new Set());
 
         return results;
     }
